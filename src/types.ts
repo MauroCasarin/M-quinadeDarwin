@@ -1,5 +1,16 @@
+export interface SpeciesTraits {
+  size: number; // 1-10
+  weight: number; // 1-10
+  magneticSusceptibility: number; // 1-10
+}
+
+export interface SpeciesData {
+  count: number;
+  traits: SpeciesTraits;
+}
+
 export interface Population {
-  [color: string]: number;
+  [color: string]: SpeciesData;
 }
 
 export interface GenerationData {

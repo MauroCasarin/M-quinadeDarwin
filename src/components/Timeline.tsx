@@ -19,7 +19,7 @@ export default function Timeline({ generations }: { generations: GenerationData[
             </div>
             
             <div className="text-xs text-slate-600 mb-3">
-              Población total: {Object.values(gen.population).reduce((a, b) => a + b, 0)}
+              Población total: {Object.values(gen.population).reduce((a, b) => a + b.count, 0)}
             </div>
 
             {gen.mutation && (

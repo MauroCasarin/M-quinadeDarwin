@@ -25,7 +25,7 @@ import {
 import Timeline from './components/Timeline';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Population, GenerationData, SimulationState } from './types';
+import { Population, GenerationData, SimulationState, SpeciesData } from './types';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -53,9 +53,9 @@ export default function App() {
   
   const [setupMode, setSetupMode] = useState(true);
   const [initialPop, setInitialPop] = useState<Population>({
-    'Rojo (grande)': 10,
-    'Verde (mediana)': 10,
-    'Azul (pequeña)': 10,
+    'Rojo (grande)': { count: 10, traits: { size: 9, weight: 8, magneticSusceptibility: 2 } },
+    'Verde (mediana)': { count: 10, traits: { size: 5, weight: 5, magneticSusceptibility: 5 } },
+    'Azul (pequeña)': { count: 10, traits: { size: 2, weight: 2, magneticSusceptibility: 8 } },
   });
   
   const [survivorsInput, setSurvivorsInput] = useState<Population>({});
@@ -72,11 +72,11 @@ export default function App() {
 
   // Calculate allele frequencies for a population
   const calculateFrequencies = (pop: Population) => {
-    const total = Object.values(pop).reduce((a, b) => a + b, 0);
+    const total = Object.values(pop).reduce((a, b) => a + b.count, 0);
     const freqs: { [color: string]: number } = {};
     if (total === 0) return freqs;
     Object.keys(pop).forEach(color => {
-      freqs[color] = (pop[color] / total) * 100;
+      freqs[color] = (pop[color].count / total) * 100;
     });
     return freqs;
   };
@@ -143,22 +143,58 @@ export default function App() {
     }
   };
 
+  const calculateSurvivors = (pop: Population, module: string): Population => {
+    const survivors: Population = {};
+    Object.keys(pop).forEach(color => {
+      const species = pop[color];
+      if (!species) return;
+
+      const traits = species.traits || { size: 5, weight: 5, magneticSusceptibility: 5 };
+      let survivalRate = 1.0; // Default survival rate
+
+      if (module === 'Criba') {
+        // Size trait: larger is better
+        survivalRate = traits.size / 10;
+      } else if (module === 'Viento') {
+        // Weight trait: heavier is better
+        survivalRate = traits.weight / 10;
+      } else if (module === 'Magnético') {
+        // Magnetic trait: higher is better
+        survivalRate = traits.magneticSusceptibility / 10;
+      }
+
+      const count = species.count || 0;
+      const survivorsCount = Math.max(0, Math.floor(count * survivalRate));
+      survivors[color] = {
+        count: isNaN(survivorsCount) ? 0 : survivorsCount,
+        traits: traits
+      };
+    });
+    return survivors;
+  };
+
   const nextGeneration = async () => {
     const lastGen = state.generations[state.generations.length - 1];
     
+    // Apply survival logic
+    const survivors = calculateSurvivors(lastGen.population, currentModule);
+    
     // Reproduction: survivors * 2
     const nextGenPop: Population = {};
-    Object.keys(survivorsInput).forEach(color => {
-      nextGenPop[color] = (survivorsInput[color] || 0) * 2;
+    Object.keys(survivors).forEach(color => {
+      nextGenPop[color] = {
+        count: survivors[color].count * 2,
+        traits: survivors[color].traits
+      };
     });
 
     addLog(`Procesando Generación ${lastGen.generation + 1}...`);
-    const analysis = await analyzeGeneration(lastGen, survivorsInput, nextGenPop, currentModule, currentMutation);
+    const analysis = await analyzeGeneration(lastGen, survivors, nextGenPop, currentModule, currentMutation);
 
     const newGen: GenerationData = {
       generation: lastGen.generation + 1,
       population: nextGenPop,
-      survivors: { ...survivorsInput },
+      survivors: { ...survivors },
       module: currentModule,
       mutation: currentMutation,
       analysis,
@@ -188,10 +224,13 @@ export default function App() {
   };
 
   // Prepare data for charts
-  const chartData = state.generations.map(gen => ({
-    name: `G${gen.generation}`,
-    ...gen.population
-  }));
+  const chartData = state.generations.map(gen => {
+    const data: { [key: string]: string | number } = { name: `G${gen.generation}` };
+    Object.keys(gen.population).forEach(color => {
+      data[color] = gen.population[color].count;
+    });
+    return data;
+  });
 
   const currentGen = state.generations[state.generations.length - 1];
 
@@ -267,7 +306,7 @@ export default function App() {
                         const val = (e.target as HTMLInputElement).value.trim();
                         if (val && !state.currentColorOptions.includes(val)) {
                           setState({ ...state, currentColorOptions: [...state.currentColorOptions, val] });
-                          setInitialPop({ ...initialPop, [val]: 10 });
+                          setInitialPop({ ...initialPop, [val]: { count: 10, traits: { size: 5, weight: 5, magneticSusceptibility: 5 } } });
                           (e.target as HTMLInputElement).value = '';
                         }
                       }
@@ -289,7 +328,7 @@ export default function App() {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Save className="w-5 h-5 text-indigo-500" />
-                  <h2 className="text-sm uppercase font-bold tracking-widest text-slate-600">Reportar Supervivientes</h2>
+                  <h2 className="text-sm uppercase font-bold tracking-widest text-slate-600">Selección Natural</h2>
                 </div>
                 <span className="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full font-bold text-[10px] uppercase">GEN {currentGen.generation}</span>
               </div>
@@ -300,15 +339,8 @@ export default function App() {
                     <div className="w-4 h-4 rounded-full shadow-inner" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                     <span className="flex-1 font-medium text-slate-700">{color}</span>
                     <div className="flex items-center gap-2">
-                      <input 
-                        type="number"
-                        min="0"
-                        max={currentGen.population[color]}
-                        value={survivorsInput[color] || 0}
-                        onChange={(e) => setSurvivorsInput({ ...survivorsInput, [color]: parseInt(e.target.value) || 0 })}
-                        className="w-20 bg-slate-50 border border-slate-200 rounded-lg p-2 text-center font-mono focus:ring-2 focus:ring-indigo-400 outline-none transition-all"
-                      />
-                      <span className="text-[10px] text-slate-400 font-bold">/ {currentGen.population[color]}</span>
+                      <span className="text-sm font-mono text-slate-700 font-bold">{currentGen.population[color]?.count || 0}</span>
+                      <span className="text-[10px] text-slate-400 font-bold">individuos</span>
                     </div>
                   </div>
                 ))}
@@ -330,12 +362,6 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <input 
-                  placeholder="Otro módulo..."
-                  value={currentModule}
-                  onChange={(e) => setCurrentModule(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-400 outline-none italic transition-all"
-                />
               </div>
 
               <div className="space-y-2">
@@ -350,14 +376,14 @@ export default function App() {
 
               <button 
                 onClick={nextGeneration}
-                disabled={isAnalyzing}
+                disabled={isAnalyzing || !currentModule}
                 className={cn(
                   "w-full py-4 bg-indigo-600 text-white rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-indigo-200 uppercase font-bold tracking-widest",
-                  isAnalyzing && "opacity-50 cursor-not-allowed"
+                  (isAnalyzing || !currentModule) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isAnalyzing ? <Activity className="w-5 h-5 animate-pulse" /> : <ChevronRight className="w-5 h-5" />}
-                {isAnalyzing ? "Procesando..." : "Simular Reproducción"}
+                {isAnalyzing ? "Procesando..." : "Simular Selección"}
               </button>
             </section>
           )}
@@ -410,7 +436,7 @@ export default function App() {
 
               {/* Charts Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 min-w-0">
                   <h3 className="text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-6">Tendencia Poblacional</h3>
                   <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -438,7 +464,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 min-w-0">
                   <h3 className="text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-6">Dominio del Ecosistema (%)</h3>
                   <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -486,9 +512,9 @@ export default function App() {
                           </td>
                           <td className="p-4">
                             <div className="flex flex-wrap gap-2">
-                              {(Object.entries(gen.population) as [string, number][]).map(([color, count]) => (
+                              {(Object.entries(gen.population) as [string, SpeciesData][]).map(([color, species]) => (
                                 <span key={color} className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md">
-                                  {color}: {count}
+                                  {color}: {species.count}
                                 </span>
                               ))}
                             </div>
