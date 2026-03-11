@@ -19,8 +19,10 @@ import {
   Info, 
   ChevronRight,
   Save,
-  Activity
+  Activity,
+  Clock
 } from 'lucide-react';
+import Timeline from './components/Timeline';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Population, GenerationData, SimulationState } from './types';
@@ -397,6 +399,15 @@ export default function App() {
                 </div>
               </section>
 
+              {/* Timeline Section */}
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                <div className="flex items-center gap-2 text-indigo-600 mb-6">
+                  <Clock className="w-5 h-5" />
+                  <h2 className="text-xs uppercase font-bold tracking-widest">Línea de Tiempo Evolutiva</h2>
+                </div>
+                <Timeline generations={state.generations} />
+              </section>
+
               {/* Charts Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
@@ -510,7 +521,6 @@ export default function App() {
             <Activity className="w-6 h-6" />
             <TrendingUp className="w-6 h-6" />
           </div>
-          <p className="text-[10px] uppercase tracking-[0.4em] font-black text-slate-300">Feria de Ciencias STEAM 2026</p>
           <p className="text-xs leading-relaxed text-slate-400 italic font-medium">
             "La selección natural actúa solamente mediante la conservación y acumulación de pequeñas modificaciones heredadas."
           </p>
