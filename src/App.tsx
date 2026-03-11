@@ -24,6 +24,7 @@ import {
   Clock
 } from 'lucide-react';
 import Timeline from './components/Timeline';
+import VisualMachine from './components/VisualMachine';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Population, GenerationData, SimulationState, SpeciesData } from './types';
@@ -460,6 +461,13 @@ export default function App() {
                 </div>
                 <Timeline generations={state.generations} />
               </section>
+
+              {/* Visual Machine Section */}
+              <VisualMachine 
+                population={currentGen.population}
+                module={currentModule}
+                onSimulationComplete={() => addLog('Simulación física completada.')}
+              />
 
               {/* Charts Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
