@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { GoogleGenAI } from "@google/genai";
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell
@@ -335,14 +336,26 @@ export default function App() {
 
               <div className="space-y-4">
                 {state.currentColorOptions.map((color, idx) => (
-                  <div key={color} className="flex items-center gap-4">
+                  <motion.div 
+                    key={color}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center gap-4"
+                  >
                     <div className="w-4 h-4 rounded-full shadow-inner" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                     <span className="flex-1 font-medium text-slate-700">{color}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono text-slate-700 font-bold">{currentGen.population[color]?.count || 0}</span>
+                      <motion.span 
+                        key={currentGen.population[color]?.count}
+                        initial={{ scale: 1.5, color: '#4f46e5' }}
+                        animate={{ scale: 1, color: '#334155' }}
+                        className="text-sm font-mono text-slate-700 font-bold"
+                      >
+                        {currentGen.population[color]?.count || 0}
+                      </motion.span>
                       <span className="text-[10px] text-slate-400 font-bold">individuos</span>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
 
@@ -395,12 +408,20 @@ export default function App() {
               <h2 className="text-[10px] uppercase font-bold tracking-widest text-indigo-400">System Log</h2>
             </div>
             <div className="h-40 overflow-y-auto space-y-2 font-mono text-[10px]">
-              {systemLog.map((log, i) => (
-                <p key={i} className={cn(i === 0 ? "text-indigo-300" : "text-slate-500")}>
-                  <span className="opacity-50 mr-2">{'>'}</span>
-                  {log}
-                </p>
-              ))}
+              <AnimatePresence initial={false}>
+                {systemLog.map((log, i) => (
+                  <motion.p 
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    className={cn(i === 0 ? "text-indigo-300" : "text-slate-500")}
+                  >
+                    <span className="opacity-50 mr-2">{'>'}</span>
+                    {log}
+                  </motion.p>
+                ))}
+              </AnimatePresence>
             </div>
           </section>
         </div>
@@ -419,9 +440,15 @@ export default function App() {
                     <Info className="w-5 h-5" />
                     <h2 className="text-xs uppercase font-bold tracking-widest">Análisis Evolutivo</h2>
                   </div>
-                  <div className="text-slate-700 text-lg leading-relaxed font-medium">
+                  <motion.div 
+                    key={currentGen.analysis}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="text-slate-700 text-lg leading-relaxed font-medium"
+                  >
                     {currentGen.analysis || "Sistema listo. Esperando el primer evento de selección física para analizar la adaptación de las especies."}
-                  </div>
+                  </motion.div>
                 </div>
               </section>
 
