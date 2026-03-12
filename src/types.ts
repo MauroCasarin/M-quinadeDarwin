@@ -1,7 +1,9 @@
 export interface SpeciesTraits {
   size: number; // 1-10
   weight: number; // 1-10
-  magneticSusceptibility: number; // 1-10
+  hasLegs: boolean;
+  canSwim: boolean;
+  speed: number; // 1-10
 }
 
 export interface SpeciesData {
