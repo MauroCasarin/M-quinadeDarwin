@@ -248,14 +248,14 @@ export default function App() {
 
   useEffect(() => {
     if (stats.population === 0 && prevStats.population > 0) {
-      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Los Glidons se han extinguido!`, ...prev]);
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Los Zylos se han extinguido!`, ...prev]);
     } else if (stats.population > 0 && prevStats.population === 0) {
-      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Nueva especie de Glidons detectada!`, ...prev]);
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Nueva especie de Zylos detectada!`, ...prev]);
     }
     if (stats.predators === 0 && prevStats.predators > 0) {
-      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Los Vorax se han extinguido!`, ...prev]);
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Los Krakos se han extinguido!`, ...prev]);
     } else if (stats.predators > 0 && prevStats.predators === 0) {
-      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Nuevo Vorax detectado!`, ...prev]);
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Nuevo Krakos detectado!`, ...prev]);
     }
     setPrevStats({ population: stats.population, predators: stats.predators });
   }, [stats.population, stats.predators]);
@@ -1274,7 +1274,7 @@ export default function App() {
                     <Activity className="w-12 h-12 text-indigo-500 mx-auto mb-4" />
                     <h2 className="text-2xl font-bold text-white mb-2">Simulador de Selección Natural</h2>
                     <p className="text-slate-400 text-sm mb-6">
-                      Observa cómo la variabilidad genética y la lucha por los recursos moldean la evolución de los Glidons en tiempo real.
+                      Observa cómo la variabilidad genética y la lucha por los recursos moldean la evolución de los Zylos en tiempo real.
                     </p>
                     <button 
                       onClick={() => setIsRunning(true)}
@@ -1441,7 +1441,7 @@ export default function App() {
                       </div>
                     </div>
                   )}) : (
-                    <div className="text-xs text-slate-500 italic">Sin Glidons activos</div>
+                    <div className="text-xs text-slate-500 italic">Sin Zylos activos</div>
                   )}
                 </div>
               </div>
@@ -1576,7 +1576,7 @@ export default function App() {
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> La Población
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
-                      Conjunto de individuos de los Glidons en el mismo lugar. Es dinámica, cambia con el tiempo y tiene una "media".
+                      Conjunto de individuos de los Zylos en el mismo lugar. Es dinámica, cambia con el tiempo y tiene una "media".
                       <br/><strong className="text-emerald-300">Rol en la evolución:</strong> La población es la que evoluciona. A medida que los menos aptos mueren y los más aptos dejan hijos, la población entera empieza a verse diferente tras muchas generaciones.
                     </p>
                     <p className="text-[9px] text-slate-500 italic border-l-2 border-slate-600 pl-2">
