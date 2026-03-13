@@ -141,7 +141,7 @@ const HEIGHT = 600;
 const INITIAL_POP = 20;
 const FOOD_ENERGY = 50;
 const REPRODUCTION_ENERGY = 150;
-const ENERGY_LOSS_BASE = 0.1;
+const ENERGY_LOSS_BASE = 0.05;
 const MUTATION_RATE = 0.1;
 
 const CreatureShape = ({ sides, spikes, colorHue, tailLength, size = 12 }: { sides: number, spikes: number, colorHue: number, tailLength: number, size?: number }) => {
@@ -242,7 +242,24 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Settings
+  const [prevStats, setPrevStats] = useState({ population: 0, predators: 0 });
+  const [log, setLog] = useState<string[]>([]);
   const [mutationStrength, setMutationStrength] = useState(0.2);
+
+  useEffect(() => {
+    if (stats.population === 0 && prevStats.population > 0) {
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Los Glidons se han extinguido!`, ...prev]);
+    } else if (stats.population > 0 && prevStats.population === 0) {
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Nueva especie de Glidons detectada!`, ...prev]);
+    }
+    if (stats.predators === 0 && prevStats.predators > 0) {
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Los Vorax se han extinguido!`, ...prev]);
+    } else if (stats.predators > 0 && prevStats.predators === 0) {
+      setLog(prev => [`${new Date().toLocaleTimeString()} - ¡Nuevo Vorax detectado!`, ...prev]);
+    }
+    setPrevStats({ population: stats.population, predators: stats.predators });
+  }, [stats.population, stats.predators]);
+
   const [simSpeed, setSimSpeed] = useState(0.5);
   const [env, setEnv] = useState<Environment>({
     temperature: 0,
@@ -421,7 +438,7 @@ export default function App() {
       // 1. BASE METABOLISM (Genotype expression)
       const baseCost = ENERGY_LOSS_BASE + 
                         (c.currentSize * 0.005) + 
-                        (Math.pow(c.phenotype.speed, 2) * 0.01) + 
+                        (Math.pow(c.phenotype.speed, 2) * 0.05) + 
                         (c.phenotype.senseRange * 0.0005);
       
       // 2. ENVIRONMENTAL PRESSURES (The "Selection" part)
@@ -523,6 +540,23 @@ export default function App() {
           const eatenFood = currentFood.find(f => f.id === nearestFoodId);
           if (eatenFood) {
             c.energy += eatenFood.energyValue;
+            // Reproduction triggered by eating
+            if (Math.random() < 0.2 && nextCreatures.length < 150) {
+              const childGenotype = mutate(c.genotype);
+              const childPhenotype = expressPhenotype(childGenotype);
+              const offspring: Creature = {
+                id: `c-${Date.now()}-${Math.random()}`,
+                x: c.x + (Math.random() - 0.5) * 50,
+                y: c.y + (Math.random() - 0.5) * 50,
+                energy: 30, // Starts with small energy
+                angle: Math.random() * Math.PI * 2,
+                age: 0,
+                genotype: childGenotype,
+                phenotype: childPhenotype,
+                currentSize: childPhenotype.size * 0.2 // Starts very small
+              };
+              nextCreatures.push(offspring);
+            }
             currentFood = currentFood.filter(f => f.id !== nearestFoodId);
           }
         }
@@ -571,7 +605,7 @@ export default function App() {
       // Update current size based on energy
       p.currentSize = p.size * Math.min(1, 0.3 + (p.energy / 800) * 0.7);
 
-      p.energy -= 0.3 * dt; // Base energy loss (reduced for better balance)
+      p.energy -= (0.3 + Math.pow(p.speed, 2) * 0.05 + p.currentSize * 0.01) * dt; // Energy loss based on speed and size
       p.age += 0.01 * dt;
 
       if (p.energy <= 0) {
@@ -587,6 +621,22 @@ export default function App() {
         });
         return; // Predator dies
       }
+
+      // 1. Check for dangerous predators
+      let predatorToFlee: Predator | null = null;
+      let minPredatorDist = 200; // Fleeing range
+
+      currentPredators.forEach(otherP => {
+        if (otherP.id === p.id) return;
+        const d = Math.hypot(p.x - otherP.x, p.y - otherP.y);
+        if (d < minPredatorDist) {
+          // Is it a threat? (Other predator is larger)
+          if (otherP.currentSize > p.currentSize * 1.2) {
+            minPredatorDist = d;
+            predatorToFlee = otherP;
+          }
+        }
+      });
 
       let bestTarget: Creature | null = null;
       let bestScore = -Infinity;
@@ -610,7 +660,7 @@ export default function App() {
           });
         }
 
-        if (!predatorEaten && d < 300) { // Predator vision range
+        if (!predatorEaten && d < 300 && !predatorToFlee) { // Predator vision range, don't hunt if fleeing
           // Score based on distance and preferred trait
           const traitValue = Number(c.phenotype[p.targetTrait]) || 0;
           const score = -d + (traitValue * 50);
@@ -626,7 +676,7 @@ export default function App() {
       let nearestFood: Food | null = null;
       let minFoodDist = 200;
 
-      if (!bestTarget) {
+      if (!bestTarget && !predatorToFlee) {
         currentFood.forEach(f => {
           const d = Math.hypot(f.x - p.x, f.y - p.y);
           if (d < minFoodDist) {
@@ -636,13 +686,32 @@ export default function App() {
         });
       }
 
-      if (bestTarget) {
-        const targetAngle = Math.atan2(bestTarget.y - p.y, bestTarget.x - p.x);
+      let targetX: number | null = null;
+      let targetY: number | null = null;
+
+      if (predatorToFlee) {
+        targetX = p.x + (p.x - predatorToFlee.x);
+        targetY = p.y + (p.y - predatorToFlee.y);
+      } else if (bestTarget) {
+        targetX = bestTarget.x;
+        targetY = bestTarget.y;
+      } else if (nearestFood) {
+        targetX = nearestFood.x;
+        targetY = nearestFood.y;
+      }
+
+      if (targetX !== null && targetY !== null) {
+        const targetAngle = Math.atan2(targetY - p.y, targetX - p.x);
         let angleDiff = targetAngle - p.angle;
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
         p.angle += angleDiff * 0.1 * dt;
+      } else {
+        p.angle += (Math.random() - 0.5) * 0.2 * dt;
+      }
 
+      // Check for eating
+      if (bestTarget) {
         const d = Math.hypot(bestTarget.x - p.x, bestTarget.y - p.y);
         if (d < p.currentSize + bestTarget.currentSize) {
           // Eat creature
@@ -652,19 +721,13 @@ export default function App() {
           if (index !== -1) nextCreatures.splice(index, 1);
         }
       } else if (nearestFood) {
-        const targetAngle = Math.atan2(nearestFood!.y - p.y, nearestFood!.x - p.x);
-        let angleDiff = targetAngle - p.angle;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        p.angle += angleDiff * 0.1 * dt;
-
-        if (minFoodDist < p.currentSize + 5) {
+        const d = Math.hypot(nearestFood!.x - p.x, nearestFood!.y - p.y);
+        if (d < p.currentSize + 5) {
           p.energy += nearestFood!.energyValue;
           currentFood = currentFood.filter(f => f.id !== nearestFood!.id);
         }
-      } else {
-        p.angle += (Math.random() - 0.5) * 0.2 * dt;
       }
+
 
       const predatorEnergyFactor = 0.5 + (p.energy / 800) * 0.5;
       p.x += Math.cos(p.angle) * p.speed * predatorEnergyFactor * dt;
@@ -777,7 +840,7 @@ export default function App() {
     if (!ctx) return;
 
     // Clear
-    ctx.fillStyle = '#0a0a0a';
+    ctx.fillStyle = '#1a2e1a'; // Natural dark forest green
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
     // Draw Grid (Subtle)
@@ -1211,7 +1274,7 @@ export default function App() {
                     <Activity className="w-12 h-12 text-indigo-500 mx-auto mb-4" />
                     <h2 className="text-2xl font-bold text-white mb-2">Simulador de Selección Natural</h2>
                     <p className="text-slate-400 text-sm mb-6">
-                      Observa cómo la variabilidad genética y la lucha por los recursos moldean la evolución de una especie en tiempo real.
+                      Observa cómo la variabilidad genética y la lucha por los recursos moldean la evolución de los Glidons en tiempo real.
                     </p>
                     <button 
                       onClick={() => setIsRunning(true)}
@@ -1378,7 +1441,7 @@ export default function App() {
                       </div>
                     </div>
                   )}) : (
-                    <div className="text-xs text-slate-500 italic">Sin especies activas</div>
+                    <div className="text-xs text-slate-500 italic">Sin Glidons activos</div>
                   )}
                 </div>
               </div>
@@ -1513,7 +1576,7 @@ export default function App() {
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> La Población
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
-                      Conjunto de individuos de la misma especie en el mismo lugar. Es dinámica, cambia con el tiempo y tiene una "media".
+                      Conjunto de individuos de los Glidons en el mismo lugar. Es dinámica, cambia con el tiempo y tiene una "media".
                       <br/><strong className="text-emerald-300">Rol en la evolución:</strong> La población es la que evoluciona. A medida que los menos aptos mueren y los más aptos dejan hijos, la población entera empieza a verse diferente tras muchas generaciones.
                     </p>
                     <p className="text-[9px] text-slate-500 italic border-l-2 border-slate-600 pl-2">
@@ -1548,6 +1611,9 @@ export default function App() {
             {stats.history.length > 0 && (
               <div className="text-indigo-400"> {'>'} Generation {stats.generation} in progress...</div>
             )}
+            {log.map((entry, i) => (
+              <div key={i} className="text-slate-300">{entry}</div>
+            ))}
             {stats.population === 0 && stats.generation > 0 && (
               <div className="text-red-500 animate-pulse"> {'>'} CRITICAL: Extinction event detected.</div>
             )}
