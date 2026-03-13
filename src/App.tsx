@@ -30,8 +30,8 @@ import { twMerge } from 'tailwind-merge';
 /**
  * NAMING SYSTEM
  */
-const SPECIES_NAMES = ['Zylos', 'Vexis', 'Kryon', 'Morth', 'Drako', 'Xylo'];
-const PREDATOR_NAMES = ['Krakos', 'Gorgon', 'Viper', 'Titan', 'Wraith', 'Slayer'];
+const SPECIES_NAMES = ['Zylos', 'Vexis', 'Kryon', 'Morth', 'Drako', 'Xylo', 'Aether', 'Brim', 'Cinder', 'Dusk'];
+const PREDATOR_NAMES = ['Krakos', 'Gorgon', 'Viper', 'Titan', 'Wraith', 'Slayer', 'Abyss', 'Void', 'Phantom', 'Havoc'];
 
 const getRandomName = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 
@@ -80,6 +80,8 @@ interface Creature {
   age: number;
   huntingTarget?: {x: number, y: number};
   speciesName: string;
+  ancestorName: string;
+  generation: number;
 }
 
 interface Food {
@@ -107,6 +109,8 @@ interface Predator {
   sides: number;
   color: string;
   preferenceTrait: keyof Phenotype; // Trait they prefer in a mate
+  ancestorName: string;
+  generation: number;
 }
 
 interface Explosion {
@@ -119,6 +123,7 @@ interface Explosion {
 }
 
 interface SpeciesStat {
+  name: string;
   colorHue: number;
   population: number;
   avgSize: number;
@@ -348,7 +353,9 @@ export default function App() {
           genotype,
           phenotype,
           currentSize: phenotype.size * 0.53, // 100/300 energy
-          speciesName: genotype.name
+          speciesName: genotype.name,
+          ancestorName: 'None',
+          generation: 1
         });
       }
     }
@@ -451,10 +458,10 @@ export default function App() {
       c.currentSize = c.phenotype.size * Math.min(1, 0.3 + (c.energy / REPRODUCTION_ENERGY) * 0.7);
 
       // 1. BASE METABOLISM (Genotype expression)
-      const baseCost = ENERGY_LOSS_BASE + 
-                        (c.currentSize * 0.005) + 
-                        (Math.pow(c.phenotype.speed, 2) * 0.05) + 
-                        (c.phenotype.senseRange * 0.0005);
+      const baseCost = (ENERGY_LOSS_BASE * 0.5) + 
+                        (c.currentSize * 0.002) + 
+                        (Math.pow(c.phenotype.speed, 2) * 0.1) + // Increased cost for speed
+                        (c.phenotype.senseRange * 0.0002);
       
       // 2. ENVIRONMENTAL PRESSURES (The "Selection" part)
       // Temperature Pressure: 
@@ -569,7 +576,9 @@ export default function App() {
                 genotype: childGenotype,
                 phenotype: childPhenotype,
                 currentSize: childPhenotype.size * 0.2, // Starts very small
-                speciesName: c.speciesName
+                speciesName: c.speciesName,
+                ancestorName: c.speciesName,
+                generation: c.generation + 1
               };
               nextCreatures.push(offspring);
             }
@@ -592,23 +601,47 @@ export default function App() {
       if (c.y > HEIGHT) c.y = 0;
 
       // Reproduction
-      if (c.energy > REPRODUCTION_ENERGY && nextCreatures.length < 150) {
+      if (c.energy > REPRODUCTION_ENERGY * 0.7 && nextCreatures.length < 150) {
+        // 30% chance to spawn a new species variation instead of a direct offspring
+        const isNewSpecies = Math.random() < 0.3;
+        
         c.energy /= 2;
-        const childGenotype = mutate(c.genotype);
+        const childGenotype = isNewSpecies ? mutate(c.genotype) : { ...c.genotype };
+        if (isNewSpecies) {
+          childGenotype.name = getRandomName(SPECIES_NAMES);
+        }
+        
         const childPhenotype = expressPhenotype(childGenotype);
         const offspring: Creature = {
           id: `c-${Date.now()}-${Math.random()}`,
-          x: c.x + (Math.random() - 0.5) * 20,
-          y: c.y + (Math.random() - 0.5) * 20,
+          x: c.x + (Math.random() - 0.5) * 20, // Spawn at parent location
+          y: c.y + (Math.random() - 0.5) * 20, // Spawn at parent location
           energy: c.energy,
           angle: Math.random() * Math.PI * 2,
           age: 0,
           genotype: childGenotype,
           phenotype: childPhenotype,
-          currentSize: childPhenotype.size * 0.3, // Starts small
-          speciesName: c.speciesName
+          currentSize: childPhenotype.size * 0.2, // Starts small
+          speciesName: childGenotype.name,
+          ancestorName: c.speciesName,
+          generation: c.generation + 1
         };
         nextCreatures.push(offspring);
+      }
+
+      // Evolution
+      if (c.currentSize >= c.phenotype.size * 0.7) {
+        // Evolve into a new species
+        const newGenotype = mutate(c.genotype);
+        newGenotype.name = getRandomName(SPECIES_NAMES);
+        const newPhenotype = expressPhenotype(newGenotype);
+        
+        c.genotype = newGenotype;
+        c.phenotype = newPhenotype;
+        c.speciesName = newGenotype.name;
+        c.ancestorName = c.speciesName;
+        c.generation += 1;
+        c.currentSize = newPhenotype.size * 0.3; // Reset size
       }
 
       nextCreatures.push(c);
@@ -756,44 +789,52 @@ export default function App() {
       if (p.y > HEIGHT) p.y = 0;
 
       // Predator reproduction
-      if (p.energy > 800 && nextPredators.length < 5) {
-        // Look for a mate
-        let mate: Predator | null = null;
-        currentPredators.forEach(otherP => {
-          if (otherP.id === p.id) return;
-          const d = Math.hypot(p.x - otherP.x, p.y - otherP.y);
-          if (d < 100) {
-            // Check if they like each other (preferenceTrait matches)
-            const p1LikesP2 = Math.abs(p.currentSize - (otherP.currentSize * (otherP.preferenceTrait === 'size' ? 1.2 : 1))) < 5;
-            const p2LikesP1 = Math.abs(otherP.currentSize - (p.currentSize * (p.preferenceTrait === 'size' ? 1.2 : 1))) < 5;
-            
-            if (p1LikesP2 || p2LikesP1) {
-              mate = otherP;
-            }
-          }
-        });
-
-        if (mate) {
-          p.energy /= 2;
-          const newSize = Math.max(10, (p.size + (mate as Predator).size) / 2 + (Math.random() - 0.5) * 5);
-          nextPredators.push({
-            id: `p-${Date.now()}-${Math.random()}`,
-            name: getRandomName(PREDATOR_NAMES),
-            x: p.x + (Math.random() - 0.5) * 20,
-            y: p.y + (Math.random() - 0.5) * 20,
-            energy: p.energy,
-            angle: Math.random() * Math.PI * 2,
-            age: 0,
-            targetTrait: Math.random() > 0.5 ? p.targetTrait : (mate as Predator).targetTrait,
-            size: newSize,
-            currentSize: newSize * 0.3, // Starts small
-            speed: Math.max(1, (p.speed + (mate as Predator).speed) / 2 + (Math.random() - 0.5) * 1),
-            spikes: Math.max(0, Math.min(4, Math.round((p.spikes + (mate as Predator).spikes) / 2))),
-            sides: Math.max(3, Math.min(8, Math.round((p.sides + (mate as Predator).sides) / 2))),
-            color: p.color,
-            preferenceTrait: Math.random() > 0.5 ? p.preferenceTrait : (mate as Predator).preferenceTrait
-          });
+      if (p.energy > 800 * 0.7 && nextPredators.length < 5) {
+        // 30% chance to spawn a new predator variation instead of a direct offspring
+        const isNewPredator = Math.random() < 0.3;
+        
+        p.energy /= 2;
+        const newPredator = { ...p };
+        if (isNewPredator) {
+          newPredator.name = getRandomName(PREDATOR_NAMES);
+          newPredator.size = Math.max(10, p.size + (Math.random() - 0.5) * 5);
+          newPredator.speed = Math.max(1, p.speed + (Math.random() - 0.5) * 1);
+          newPredator.ancestorName = p.name;
+          newPredator.generation = p.generation + 1;
+        } else {
+          newPredator.ancestorName = p.name;
+          newPredator.generation = p.generation + 1;
         }
+        
+        nextPredators.push({
+          ...newPredator,
+          id: `p-${Date.now()}-${Math.random()}`,
+          x: p.x + (Math.random() - 0.5) * 20, // Spawn at parent location
+          y: p.y + (Math.random() - 0.5) * 20, // Spawn at parent location
+          energy: p.energy,
+          age: 0,
+          currentSize: newPredator.size * 0.3 // Starts small
+        });
+      }
+
+      // Predator evolution
+      if (p.currentSize >= p.size * 0.7) {
+        // Evolve into a new predator
+        const newPredator = { ...p };
+        newPredator.name = getRandomName(PREDATOR_NAMES);
+        newPredator.size = Math.max(10, p.size + (Math.random() - 0.5) * 5);
+        newPredator.speed = Math.max(1, p.speed + (Math.random() - 0.5) * 1);
+        newPredator.ancestorName = p.name;
+        newPredator.generation += 1;
+        newPredator.currentSize = newPredator.size * 0.3; // Reset size
+        
+        // Replace current predator with evolved version
+        p.name = newPredator.name;
+        p.size = newPredator.size;
+        p.speed = newPredator.speed;
+        p.ancestorName = newPredator.ancestorName;
+        p.generation = newPredator.generation;
+        p.currentSize = newPredator.currentSize;
       }
 
       nextPredators.push(p);
@@ -851,7 +892,9 @@ export default function App() {
           spikes,
           sides,
           color,
-          preferenceTrait: traits[Math.floor(Math.random() * traits.length)]
+          preferenceTrait: traits[Math.floor(Math.random() * traits.length)],
+          ancestorName: 'None',
+          generation: 1
         });
       }
     }
@@ -1152,6 +1195,7 @@ export default function App() {
           const dominantTrait = (Object.keys(traitCounts) as ('size' | 'speed' | 'spikes' | 'sides')[]).reduce((a, b) => traitCounts[a] > traitCounts[b] ? a : b);
 
           return {
+            name: group[0].speciesName,
             colorHue: hue,
             population: group.length,
             avgSize: group.reduce((acc, c) => acc + c.phenotype.size, 0) / group.length,
@@ -1230,7 +1274,9 @@ export default function App() {
           age: 0,
           genotype: newGenotype,
           phenotype: expressPhenotype(newGenotype),
-          speciesName: newGenotype.name
+          speciesName: newGenotype.name,
+          ancestorName: 'None',
+          generation: 1
         });
       }
     }, 10000);
@@ -1469,7 +1515,7 @@ export default function App() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <CreatureShape sides={Math.round(sp.avgSides)} spikes={Math.round(sp.avgSpikes)} colorHue={sp.colorHue} tailLength={sp.avgTail} size={sp.avgSize} />
-                          <span className="text-xs font-bold text-white">Especie {i + 1}</span>
+                          <span className="text-xs font-bold text-white">{sp.name}</span>
                         </div>
                         <span className="text-[10px] text-indigo-400 font-mono">{sp.population} ind.</span>
                       </div>
