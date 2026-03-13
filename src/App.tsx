@@ -27,7 +27,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-/** 
+/**
+ * NAMING SYSTEM
+ */
+const SPECIES_NAMES = ['Zylos', 'Vexis', 'Kryon', 'Morth', 'Drako', 'Xylo'];
+const PREDATOR_NAMES = ['Krakos', 'Gorgon', 'Viper', 'Titan', 'Wraith', 'Slayer'];
+
+const getRandomName = (list: string[]) => list[Math.floor(Math.random() * list.length)];
+
+/**
  * UTILS 
  */
 function cn(...inputs: ClassValue[]) {
@@ -46,6 +54,7 @@ interface Genotype {
   spikeGene: number;     // 0.0 to 1.0
   tailGene: number;      // 0.0 to 1.0
   hunterTraitGene: number; // 0.0 to 1.0
+  name: string;
 }
 
 interface Phenotype {
@@ -70,6 +79,7 @@ interface Creature {
   angle: number;
   age: number;
   huntingTarget?: {x: number, y: number};
+  speciesName: string;
 }
 
 interface Food {
@@ -83,6 +93,7 @@ interface Food {
 
 interface Predator {
   id: string;
+  name: string;
   x: number;
   y: number;
   energy: number;
@@ -95,6 +106,7 @@ interface Predator {
   spikes: number;
   sides: number;
   color: string;
+  preferenceTrait: keyof Phenotype; // Trait they prefer in a mate
 }
 
 interface Explosion {
@@ -293,7 +305,8 @@ export default function App() {
       shapeGene: Math.max(0, Math.min(1, genotype.shapeGene + (Math.random() - 0.5) * m)),
       spikeGene: Math.max(0, Math.min(1, genotype.spikeGene + (Math.random() - 0.5) * m)),
       tailGene: Math.max(0, Math.min(1, genotype.tailGene + (Math.random() - 0.5) * m)),
-      hunterTraitGene: Math.max(0, Math.min(1, genotype.hunterTraitGene + (Math.random() - 0.5) * m))
+      hunterTraitGene: Math.max(0, Math.min(1, genotype.hunterTraitGene + (Math.random() - 0.5) * m)),
+      name: genotype.name
     };
   };
 
@@ -314,7 +327,8 @@ export default function App() {
         shapeGene: Math.random(),
         spikeGene: Math.random(),
         tailGene: Math.random(),
-        hunterTraitGene: Math.random()
+        hunterTraitGene: Math.random(),
+        name: getRandomName(SPECIES_NAMES)
       };
 
       for (let i = 0; i < creaturesPerSpecies; i++) {
@@ -333,7 +347,8 @@ export default function App() {
           age: 0,
           genotype,
           phenotype,
-          currentSize: phenotype.size * 0.53 // 100/300 energy
+          currentSize: phenotype.size * 0.53, // 100/300 energy
+          speciesName: genotype.name
         });
       }
     }
@@ -553,7 +568,8 @@ export default function App() {
                 age: 0,
                 genotype: childGenotype,
                 phenotype: childPhenotype,
-                currentSize: childPhenotype.size * 0.2 // Starts very small
+                currentSize: childPhenotype.size * 0.2, // Starts very small
+                speciesName: c.speciesName
               };
               nextCreatures.push(offspring);
             }
@@ -589,7 +605,8 @@ export default function App() {
           age: 0,
           genotype: childGenotype,
           phenotype: childPhenotype,
-          currentSize: childPhenotype.size * 0.3 // Starts small
+          currentSize: childPhenotype.size * 0.3, // Starts small
+          speciesName: c.speciesName
         };
         nextCreatures.push(offspring);
       }
@@ -739,22 +756,44 @@ export default function App() {
       if (p.y > HEIGHT) p.y = 0;
 
       // Predator reproduction
-      if (p.energy > 800 && nextPredators.length < 3) {
-        p.energy /= 2;
-        const newSize = Math.max(10, p.size + (Math.random() - 0.5) * 5);
-        nextPredators.push({
-          ...p,
-          id: `p-${Date.now()}-${Math.random()}`,
-          x: p.x + (Math.random() - 0.5) * 20,
-          y: p.y + (Math.random() - 0.5) * 20,
-          energy: p.energy,
-          age: 0,
-          // Slight mutation in predator
-          size: newSize,
-          currentSize: newSize * 0.3, // Starts small
-          speed: Math.max(1, p.speed + (Math.random() - 0.5) * 1),
-          sides: Math.max(3, Math.min(8, p.sides + (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 2)))
+      if (p.energy > 800 && nextPredators.length < 5) {
+        // Look for a mate
+        let mate: Predator | null = null;
+        currentPredators.forEach(otherP => {
+          if (otherP.id === p.id) return;
+          const d = Math.hypot(p.x - otherP.x, p.y - otherP.y);
+          if (d < 100) {
+            // Check if they like each other (preferenceTrait matches)
+            const p1LikesP2 = Math.abs(p.currentSize - (otherP.currentSize * (otherP.preferenceTrait === 'size' ? 1.2 : 1))) < 5;
+            const p2LikesP1 = Math.abs(otherP.currentSize - (p.currentSize * (p.preferenceTrait === 'size' ? 1.2 : 1))) < 5;
+            
+            if (p1LikesP2 || p2LikesP1) {
+              mate = otherP;
+            }
+          }
         });
+
+        if (mate) {
+          p.energy /= 2;
+          const newSize = Math.max(10, (p.size + (mate as Predator).size) / 2 + (Math.random() - 0.5) * 5);
+          nextPredators.push({
+            id: `p-${Date.now()}-${Math.random()}`,
+            name: getRandomName(PREDATOR_NAMES),
+            x: p.x + (Math.random() - 0.5) * 20,
+            y: p.y + (Math.random() - 0.5) * 20,
+            energy: p.energy,
+            angle: Math.random() * Math.PI * 2,
+            age: 0,
+            targetTrait: Math.random() > 0.5 ? p.targetTrait : (mate as Predator).targetTrait,
+            size: newSize,
+            currentSize: newSize * 0.3, // Starts small
+            speed: Math.max(1, (p.speed + (mate as Predator).speed) / 2 + (Math.random() - 0.5) * 1),
+            spikes: Math.max(0, Math.min(4, Math.round((p.spikes + (mate as Predator).spikes) / 2))),
+            sides: Math.max(3, Math.min(8, Math.round((p.sides + (mate as Predator).sides) / 2))),
+            color: p.color,
+            preferenceTrait: Math.random() > 0.5 ? p.preferenceTrait : (mate as Predator).preferenceTrait
+          });
+        }
       }
 
       nextPredators.push(p);
@@ -799,6 +838,7 @@ export default function App() {
 
         nextPredators.push({
           id: `p-${Date.now()}-${i}`,
+          name: getRandomName(PREDATOR_NAMES),
           x: Math.random() * WIDTH,
           y: Math.random() * HEIGHT,
           energy: 400,
@@ -810,7 +850,8 @@ export default function App() {
           speed: speed + (Math.random() - 0.5) * 0.5,
           spikes,
           sides,
-          color
+          color,
+          preferenceTrait: traits[Math.floor(Math.random() * traits.length)]
         });
       }
     }
@@ -1177,7 +1218,8 @@ export default function App() {
           shapeGene: Math.random(),
           spikeGene: Math.random(),
           tailGene: Math.random(),
-          hunterTraitGene: Math.random()
+          hunterTraitGene: Math.random(),
+          name: getRandomName(SPECIES_NAMES)
         };
         creaturesRef.current.push({
           id: `c-alien-${Date.now()}`,
@@ -1187,7 +1229,8 @@ export default function App() {
           angle: Math.random() * Math.PI * 2,
           age: 0,
           genotype: newGenotype,
-          phenotype: expressPhenotype(newGenotype)
+          phenotype: expressPhenotype(newGenotype),
+          speciesName: newGenotype.name
         });
       }
     }, 10000);
@@ -1470,7 +1513,7 @@ export default function App() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <PredatorShape sides={p.sides} spikes={p.spikes} size={p.size} color={p.color} />
-                            <span className="text-xs font-bold text-red-400">Cazador {i + 1}</span>
+                            <span className="text-xs font-bold text-red-400">{p.name}</span>
                           </div>
                           <span className="text-[10px] text-red-300 font-mono">Vel: {p.speed.toFixed(1)}</span>
                         </div>
