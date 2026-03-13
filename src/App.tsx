@@ -459,21 +459,21 @@ export default function App() {
 
       // 1. BASE METABOLISM (Genotype expression)
       const baseCost = (ENERGY_LOSS_BASE * 0.5) + 
-                        (c.currentSize * 0.002) + 
-                        (Math.pow(c.phenotype.speed, 2) * 0.1) + // Increased cost for speed
-                        (c.phenotype.senseRange * 0.0002);
+                        (c.currentSize * 0.001) + 
+                        (Math.pow(c.phenotype.speed, 2) * 0.05) + // Reduced cost for speed
+                        (c.phenotype.senseRange * 0.0001);
       
       // 2. ENVIRONMENTAL PRESSURES (The "Selection" part)
       // Temperature Pressure: 
       // - Cold (temp < 0) favors Large size (Bergmann's Rule)
       // - Hot (temp > 0) favors Small size
       const tempEffect = env.temperature > 0 
-        ? (c.currentSize * 0.01 * env.temperature) // Heat stress for big ones
-        : (Math.abs(env.temperature) * (20 - c.currentSize) * 0.01); // Cold stress for small ones
+        ? (c.currentSize * 0.005 * env.temperature) // Reduced heat stress
+        : (Math.abs(env.temperature) * (20 - c.currentSize) * 0.005); // Reduced cold stress
 
       // Hazard Pressure:
       // - High hazards favor Speed (evasion)
-      const hazardEffect = env.hazards * (5 - c.phenotype.speed) * 0.05;
+      const hazardEffect = env.hazards * (5 - c.phenotype.speed) * 0.02; // Reduced
 
       const totalEnergyCost = (baseCost + tempEffect + hazardEffect) * dt;
       
@@ -568,8 +568,8 @@ export default function App() {
               const childPhenotype = expressPhenotype(childGenotype);
               const offspring: Creature = {
                 id: `c-${Date.now()}-${Math.random()}`,
-                x: c.x + (Math.random() - 0.5) * 50,
-                y: c.y + (Math.random() - 0.5) * 50,
+                x: c.x,
+                y: c.y,
                 energy: 30, // Starts with small energy
                 angle: Math.random() * Math.PI * 2,
                 age: 0,
@@ -809,8 +809,8 @@ export default function App() {
         nextPredators.push({
           ...newPredator,
           id: `p-${Date.now()}-${Math.random()}`,
-          x: p.x + (Math.random() - 0.5) * 20, // Spawn at parent location
-          y: p.y + (Math.random() - 0.5) * 20, // Spawn at parent location
+          x: p.x, // Emerge from parent
+          y: p.y, // Emerge from parent
           energy: p.energy,
           age: 0,
           currentSize: newPredator.size * 0.3 // Starts small
