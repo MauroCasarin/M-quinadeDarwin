@@ -237,6 +237,7 @@ export default function App() {
   const [food, setFood] = useState<Food[]>([]);
   const [predators, setPredators] = useState<Predator[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [activeEvent, setActiveEvent] = useState<string | null>(null);
   const [selectedCreature, setSelectedCreature] = useState<Creature | null>(null);
   const [stats, setStats] = useState<SimStats>({
     generation: 0,
@@ -254,6 +255,7 @@ export default function App() {
   const foodRef = useRef<Food[]>([]);
   const predatorsRef = useRef<Predator[]>([]);
   const explosionsRef = useRef<Explosion[]>([]);
+  const particlesRef = useRef<{x: number, y: number, vx: number, vy: number, life: number, type: string}[]>([]);
   const requestRef = useRef<number>();
   const lastTimeRef = useRef<number>(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -302,16 +304,17 @@ export default function App() {
 
   const mutate = (genotype: Genotype): Genotype => {
     const m = mutationStrength * 0.5;
+    const isMutation = Math.random() < 0.1; // 10% chance to mutate significantly
     return {
       sizeGene: Math.max(0, Math.min(1, genotype.sizeGene + (Math.random() - 0.5) * m)),
       speedGene: Math.max(0, Math.min(1, genotype.speedGene + (Math.random() - 0.5) * m)),
       senseGene: Math.max(0, Math.min(1, genotype.senseGene + (Math.random() - 0.5) * m)),
-      colorHue: genotype.colorHue, // COLOR STAYS EXACTLY THE SAME TO TRACK LINEAGE
+      colorHue: isMutation ? (genotype.colorHue + 30 + Math.random() * 300) % 360 : genotype.colorHue,
       shapeGene: Math.max(0, Math.min(1, genotype.shapeGene + (Math.random() - 0.5) * m)),
       spikeGene: Math.max(0, Math.min(1, genotype.spikeGene + (Math.random() - 0.5) * m)),
       tailGene: Math.max(0, Math.min(1, genotype.tailGene + (Math.random() - 0.5) * m)),
       hunterTraitGene: Math.max(0, Math.min(1, genotype.hunterTraitGene + (Math.random() - 0.5) * m)),
-      name: genotype.name
+      name: isMutation ? getRandomName(SPECIES_NAMES) : genotype.name
     };
   };
 
@@ -400,6 +403,8 @@ export default function App() {
   /**
    * SIMULATION LOGIC
    */
+  const updateRef = useRef<((time: number) => void) | null>(null);
+
   const update = (time: number) => {
     if (!isRunning) return;
 
@@ -576,7 +581,7 @@ export default function App() {
                 genotype: childGenotype,
                 phenotype: childPhenotype,
                 currentSize: childPhenotype.size * 0.2, // Starts very small
-                speciesName: c.speciesName,
+                speciesName: childGenotype.name,
                 ancestorName: c.speciesName,
                 generation: c.generation + 1
               };
@@ -779,6 +784,8 @@ export default function App() {
       }
 
 
+      p.energy -= 0.5; // Constant energy loss for predators
+      p.energy -= 0.5; // Constant energy loss for predators
       const predatorEnergyFactor = 0.5 + (p.energy / 800) * 0.5;
       p.x += Math.cos(p.angle) * p.speed * predatorEnergyFactor * dt;
       p.y += Math.sin(p.angle) * p.speed * predatorEnergyFactor * dt;
@@ -789,32 +796,36 @@ export default function App() {
       if (p.y > HEIGHT) p.y = 0;
 
       // Predator reproduction
-      if (p.energy > 800 * 0.7 && nextPredators.length < 5) {
-        // 30% chance to spawn a new predator variation instead of a direct offspring
-        const isNewPredator = Math.random() < 0.3;
-        
-        p.energy /= 2;
-        const newPredator = { ...p };
-        if (isNewPredator) {
-          newPredator.name = getRandomName(PREDATOR_NAMES);
-          newPredator.size = Math.max(10, p.size + (Math.random() - 0.5) * 5);
-          newPredator.speed = Math.max(1, p.speed + (Math.random() - 0.5) * 1);
-          newPredator.ancestorName = p.name;
-          newPredator.generation = p.generation + 1;
-        } else {
-          newPredator.ancestorName = p.name;
-          newPredator.generation = p.generation + 1;
+      if (p.energy > 800 * 0.5 && nextPredators.length < 5) {
+        // Look for a mate
+        for (const otherP of predatorsRef.current) {
+          if (p.id !== otherP.id && otherP.energy > 800 * 0.5) {
+            const dx = p.x - otherP.x;
+            const dy = p.y - otherP.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 50) {
+              // Mate!
+              p.energy -= 400;
+              otherP.energy -= 400;
+              
+              const offspring = { ...p };
+              offspring.name = getRandomName(PREDATOR_NAMES);
+              offspring.size = Math.min(30, Math.max(10, (p.size + otherP.size) / 2 + (Math.random() - 0.5) * 5));
+              offspring.speed = Math.min(5, Math.max(1, (p.speed + otherP.speed) / 2 + (Math.random() - 0.5) * 1));
+              offspring.ancestorName = `${p.name}/${otherP.name}`;
+              offspring.generation = Math.max(p.generation, otherP.generation) + 1;
+              offspring.id = `p-${Date.now()}-${Math.random()}`;
+              offspring.x = p.x;
+              offspring.y = p.y;
+              offspring.energy = 400;
+              offspring.age = 0;
+              offspring.currentSize = offspring.size * 0.3;
+              
+              nextPredators.push(offspring);
+              break;
+            }
+          }
         }
-        
-        nextPredators.push({
-          ...newPredator,
-          id: `p-${Date.now()}-${Math.random()}`,
-          x: p.x, // Emerge from parent
-          y: p.y, // Emerge from parent
-          energy: p.energy,
-          age: 0,
-          currentSize: newPredator.size * 0.3 // Starts small
-        });
       }
 
       // Predator evolution
@@ -822,8 +833,8 @@ export default function App() {
         // Evolve into a new predator
         const newPredator = { ...p };
         newPredator.name = getRandomName(PREDATOR_NAMES);
-        newPredator.size = Math.max(10, p.size + (Math.random() - 0.5) * 5);
-        newPredator.speed = Math.max(1, p.speed + (Math.random() - 0.5) * 1);
+        newPredator.size = Math.min(30, Math.max(10, p.size + (Math.random() - 0.5) * 5));
+        newPredator.speed = Math.min(5, Math.max(1, p.speed + (Math.random() - 0.5) * 1));
         newPredator.ancestorName = p.name;
         newPredator.generation += 1;
         newPredator.currentSize = newPredator.size * 0.3; // Reset size
@@ -911,10 +922,55 @@ export default function App() {
     predatorsRef.current = nextPredators;
     explosionsRef.current = nextExplosions;
 
+    // Update Particles
+    const nextParticles = [...particlesRef.current];
+    if (activeEvent === 'clima') {
+      for(let i=0; i<10; i++) {
+        nextParticles.push({
+          x: Math.random() * WIDTH,
+          y: HEIGHT + 10,
+          vx: (Math.random() - 0.5) * 3,
+          vy: -Math.random() * 8 - 2,
+          life: 1,
+          type: 'heat'
+        });
+      }
+    } else if (activeEvent === 'glaciacion') {
+      for(let i=0; i<15; i++) {
+        nextParticles.push({
+          x: Math.random() * WIDTH,
+          y: -10,
+          vx: (Math.random() - 0.5) * 4,
+          vy: Math.random() * 5 + 2,
+          life: 1,
+          type: 'snow'
+        });
+      }
+    } else if (activeEvent === 'meteorito') {
+      if (Math.random() < 0.3) {
+        nextParticles.push({
+          x: Math.random() * WIDTH,
+          y: -50,
+          vx: -5 - Math.random() * 10,
+          vy: 15 + Math.random() * 10,
+          life: 2,
+          type: 'meteor'
+        });
+      }
+    }
+    
+    // Update and filter
+    particlesRef.current = nextParticles.map(p => ({
+      ...p,
+      x: p.x + p.vx * dt,
+      y: p.y + p.vy * dt,
+      life: p.life - 0.01 * dt
+    })).filter(p => p.life > 0 && p.y < HEIGHT + 50 && p.x > -50 && p.x < WIDTH + 50);
+
     // Draw to canvas
     draw();
 
-    requestRef.current = requestAnimationFrame(update);
+    requestRef.current = requestAnimationFrame((t) => updateRef.current?.(t));
   };
 
   const draw = () => {
@@ -983,25 +1039,7 @@ export default function App() {
     });
 
     // Draw Hunting Lines
-    creaturesRef.current.forEach(c => {
-      if (c.huntingTarget) {
-        ctx.beginPath();
-        ctx.moveTo(c.x, c.y);
-        ctx.lineTo(c.huntingTarget.x, c.huntingTarget.y);
-        ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([5, 5]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        
-        // Draw crosshair on target
-        ctx.beginPath();
-        ctx.arc(c.huntingTarget.x, c.huntingTarget.y, 12, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255, 165, 0, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    });
+    // Removed targeting lines as requested
 
     // Draw Creatures
     creaturesRef.current.forEach(c => {
@@ -1130,6 +1168,52 @@ export default function App() {
       ctx.lineWidth = 2;
       ctx.stroke();
     });
+
+    // Draw Particles
+    particlesRef.current.forEach(p => {
+      ctx.beginPath();
+      if (p.type === 'meteor') {
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 150, 0, ${p.life})`;
+        ctx.fill();
+        // Tail
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - p.vx * 5, p.y - p.vy * 5);
+        ctx.strokeStyle = `rgba(255, 50, 0, ${p.life})`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      } else {
+        ctx.arc(p.x, p.y, p.type === 'heat' ? 2 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = p.type === 'heat' ? `rgba(255, 100, 0, ${p.life})` : `rgba(255, 255, 255, ${p.life})`;
+        ctx.fill();
+      }
+    });
+
+    // Draw Event Animations
+    if (activeEvent) {
+      if (activeEvent === 'sismo') {
+        // Shake effect
+        const shakeX = (Math.random() - 0.5) * 10;
+        const shakeY = (Math.random() - 0.5) * 10;
+        ctx.translate(shakeX, shakeY);
+      }
+      
+      ctx.fillStyle = activeEvent === 'meteorito' ? 'rgba(255, 0, 0, 0.1)' : 
+                      activeEvent === 'sismo' ? 'rgba(100, 50, 0, 0.1)' :
+                      activeEvent === 'clima' ? 'rgba(255, 100, 0, 0.2)' :
+                      'rgba(100, 200, 255, 0.2)';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.font = 'bold 48px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(activeEvent.toUpperCase(), WIDTH / 2, HEIGHT / 2);
+      
+      if (activeEvent === 'sismo') {
+        // Reset translation
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1153,9 +1237,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    updateRef.current = update;
+  });
+
+  useEffect(() => {
     if (isRunning) {
       lastTimeRef.current = performance.now();
-      requestRef.current = requestAnimationFrame(update);
+      requestRef.current = requestAnimationFrame((t) => updateRef.current?.(t));
     } else {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
       lastTimeRef.current = 0; // Reset for next start
@@ -1307,6 +1395,31 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 mr-4">
+                <button onClick={() => {
+                    setActiveEvent('clima');
+                    setEnv(e => ({...e, temperature: 1}));
+                    setTimeout(() => setActiveEvent(null), 2000);
+                }} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/30" title="Clima Intenso">🔥</button>
+                <button onClick={() => {
+                    setActiveEvent('glaciacion');
+                    setEnv(e => ({...e, temperature: -1}));
+                    setTimeout(() => setActiveEvent(null), 2000);
+                }} className="p-2 bg-blue-500/20 rounded-lg hover:bg-blue-500/30" title="Glaciación">❄️</button>
+                <button onClick={() => {
+                    setActiveEvent('sismo');
+                    creaturesRef.current = creaturesRef.current.filter(() => Math.random() > 0.5);
+                    predatorsRef.current = predatorsRef.current.filter(() => Math.random() > 0.5);
+                    setTimeout(() => setActiveEvent(null), 1000);
+                }} className="p-2 bg-yellow-500/20 rounded-lg hover:bg-yellow-500/30" title="Sismo">🌋</button>
+                <button onClick={() => {
+                    setActiveEvent('meteorito');
+                    // Meteorite kills only larger creatures (size > 15)
+                    creaturesRef.current = creaturesRef.current.filter(c => c.currentSize <= 15);
+                    predatorsRef.current = predatorsRef.current.filter(p => p.currentSize <= 15);
+                    setTimeout(() => setActiveEvent(null), 2000);
+                }} className="p-2 bg-purple-500/20 rounded-lg hover:bg-purple-500/30" title="Meteorito">☄️</button>
+              </div>
               <button 
                 onClick={() => setIsRunning(!isRunning)}
                 className={cn(
